@@ -11,11 +11,11 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Setup Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v5
         with:
           go-version: 1.18
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: yaml-lint
@@ -25,7 +25,7 @@ jobs:
       - name: Run integration tests
         run: make test-integration
       - name: Release snapshot
-        uses: goreleaser/goreleaser-action@v2
+        uses: goreleaser/goreleaser-action@v6
         with:
           version: v1.1.0
           args: release --snapshot --skip-publish --rm-dist
