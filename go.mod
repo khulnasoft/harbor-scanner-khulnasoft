@@ -3,7 +3,7 @@ module github.com/khulnasoft/harbor-scanner-khulnasoft
 go 1.21
 
 require (
-	github.com/alicebob/miniredis/v2 v2.32.1
+	github.com/alicebob/miniredis/v2 v2.33.0
 	github.com/caarlos0/env/v6 v6.10.1
 	github.com/docker/docker v26.1.3+incompatible
 	github.com/docker/go-connections v0.5.0
