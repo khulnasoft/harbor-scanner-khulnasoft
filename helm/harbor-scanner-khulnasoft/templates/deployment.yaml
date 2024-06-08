@@ -1,0 +1,175 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "harbor-scanner-khulnasoft.fullname" . }}
+  labels:
+{{ include "harbor-scanner-khulnasoft.labels" . | indent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "harbor-scanner-khulnasoft.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "harbor-scanner-khulnasoft.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      serviceAccountName: {{ include "harbor-scanner-khulnasoft.fullname" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 1000
+        runAsUser: 1000
+        runAsNonRoot: true
+      initContainers:
+        - name: scannercli
+          image: {{ template "harbor-scanner-khulnasoft.scannerImageRef" . }}
+          imagePullPolicy: {{ .Values.khulnasoft.image.pullPolicy | quote }}
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - NET_RAW
+          command:
+            - cp
+          args:
+            - "/opt/khulnasoft/scannercli"
+            - "/downloads/scannercli"
+          {{- if .Values.initResources }}
+          resources:
+{{ toYaml .Values.initResources | indent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: scannercli
+              mountPath: /downloads
+      containers:
+        - name: main
+          image: {{ template "harbor-scanner-khulnasoft.adapterImageRef" . }}
+          imagePullPolicy: {{ .Values.scanner.image.pullPolicy | quote }}
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - NET_RAW
+          env:
+            - name: "SCANNER_LOG_LEVEL"
+              value: {{ .Values.scanner.logLevel }}
+            - name: "SCANNER_API_ADDR"
+              value: ":{{ .Values.service.port }}"
+            - name: "SCANNER_API_READ_TIMEOUT"
+              value: {{ .Values.scanner.api.readTimeout | default "15s" | quote }}
+            - name: "SCANNER_API_WRITE_TIMEOUT"
+              value: {{ .Values.scanner.api.writeTimeout | default "15s" | quote }}
+            - name: "SCANNER_API_IDLE_TIMEOUT"
+              value: {{ .Values.scanner.api.idleTimeout | default "60s" | quote }}
+            - name: "SCANNER_KHULNASOFT_USERNAME"
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "harbor-scanner-khulnasoft.fullname" . }}
+                  key: khulnasoft_username
+            - name: "SCANNER_KHULNASOFT_PASSWORD"
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "harbor-scanner-khulnasoft.fullname" . }}
+                  key: khulnasoft_password
+            - name: "SCANNER_KHULNASOFT_HOST"
+              value: {{ .Values.scanner.khulnasoft.host | quote }}
+            - name: "SCANNER_KHULNASOFT_REGISTRY"
+              value: {{ .Values.scanner.khulnasoft.registry | default "Harbor" | quote }}
+            - name: "SCANNER_CLI_NO_VERIFY"
+              value: {{ .Values.scanner.khulnasoft.scannerCLINoVerify | default false | quote }}
+            - name: "SCANNER_CLI_SHOW_NEGLIGIBLE"
+              value: {{ .Values.scanner.khulnasoft.scannerCLIShowNegligible | default true | quote }}
+            - name: "SCANNER_KHULNASOFT_REPORTS_DIR"
+              value: {{ .Values.scanner.khulnasoft.reportsDir | quote }}
+            - name: "SCANNER_CLI_OVERRIDE_REGISTRY_CREDENTIALS"
+              value: {{ .Values.scanner.khulnasoft.scannerCLIOverrideRegistryCredentials | default false | quote }}
+            - name: "SCANNER_CLI_DIRECT_CC"
+              value: {{ .Values.scanner.khulnasoft.scannerCLIDirectCC | default false | quote }}
+            - name: "SCANNER_CLI_REGISTER_IMAGES"
+              value: {{ .Values.scanner.khulnasoft.scannerCLIRegisterImages | default "Never" | quote }}
+            - name: "SCANNER_KHULNASOFT_USE_IMAGE_TAG"
+              value: {{ .Values.scanner.khulnasoft.useImageTag | default false | quote }}
+            - name: "SCANNER_STORE_REDIS_NAMESPACE"
+              value: {{ .Values.scanner.store.redisNamespace | quote }}
+            - name: "SCANNER_STORE_REDIS_SCAN_JOB_TTL"
+              value: {{ .Values.scanner.store.redisScanJobTTL | quote }}
+            - name: "SCANNER_REDIS_URL"
+              value: {{ .Values.scanner.redis.poolURL | quote }}
+            - name: "SCANNER_REDIS_POOL_MAX_ACTIVE"
+              value: {{ .Values.scanner.redis.poolMaxActive | quote }}
+            - name: "SCANNER_REDIS_POOL_MAX_IDLE"
+              value: {{ .Values.scanner.redis.poolMaxIdle | quote }}
+            - name: "SCANNER_REDIS_POOL_IDLE_TIMEOUT"
+              value: {{ .Values.scanner.redis.poolIdleTimeout | quote }}
+            - name: "SCANNER_REDIS_POOL_CONNECTION_TIMEOUT"
+              value: {{ .Values.scanner.redis.poolConnectionTimeout | quote }}
+            - name: "SCANNER_REDIS_POOL_READ_TIMEOUT"
+              value: {{ .Values.scanner.redis.poolReadTimeout | quote }}
+            - name: "SCANNER_REDIS_POOL_WRITE_TIMEOUT"
+              value: {{ .Values.scanner.redis.poolWriteTimeout | quote }}
+            - name: "TMPDIR"
+              value: {{ .Values.scanner.tmpdir }}
+            {{- if .Values.scanner.api.tlsEnabled }}
+            - name: "SCANNER_API_TLS_CERTIFICATE"
+              value: "/certs/tls.crt"
+            - name: "SCANNER_API_TLS_KEY"
+              value: "/certs/tls.key"
+            {{- end }}
+          ports:
+            - name: api-server
+              containerPort: {{ .Values.service.port | default 8080 }}
+          livenessProbe:
+            httpGet:
+              scheme: {{ include "probeScheme" . }}
+              path: /probe/healthy
+              port: api-server
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 10
+          readinessProbe:
+            httpGet:
+              scheme: {{ include "probeScheme" . }}
+              path: /probe/ready
+              port: api-server
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          {{- if .Values.mainResources }}
+          resources:
+{{ toYaml .Values.mainResources | indent 12 }}
+          {{- end}}
+          volumeMounts:
+            - name: scannercli
+              mountPath: /usr/local/bin/scannercli
+              subPath: scannercli
+            - name: data
+              mountPath: /var/lib/scanner/reports
+              readOnly: false
+            - name: khulnasoft
+              mountPath: /opt/khulnasoftscans
+              readOnly: false
+            {{- if .Values.scanner.api.tlsEnabled }}
+            - name: certs
+              mountPath: /certs
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: scannercli
+          emptyDir: {}
+        - name: data
+          emptyDir: {}
+        - name: khulnasoft
+          emptyDir: {}
+        {{- if .Values.scanner.api.tlsEnabled }}
+        - name: certs
+          secret:
+            secretName: {{ include "harbor-scanner-khulnasoft.fullname" . }}-tls
+        {{- end }}

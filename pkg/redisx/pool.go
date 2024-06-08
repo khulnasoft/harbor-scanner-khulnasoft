@@ -1,87 +1,119 @@
 package redisx
 
 import (
-	"context"
+	"errors"
 	"fmt"
-	"log/slog"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
-	"github.com/redis/go-redis/v9"
-	"golang.org/x/xerrors"
-
+	"github.com/FZambia/sentinel"
 	"github.com/khulnasoft/harbor-scanner-khulnasoft/pkg/etc"
+	"github.com/gomodule/redigo/redis"
+	log "github.com/sirupsen/logrus"
 )
 
-// NewClient constructs a redis.Client with the specified configuration.
+// NewPool constructs a redis.Pool with the specified configuration.
 //
 // The URI scheme currently supports connections to a standalone Redis server,
 // i.e. `redis://user:password@host:port/db-number`.
-func NewClient(config etc.RedisPool) (*redis.Client, error) {
+func NewPool(config etc.RedisPool) (pool *redis.Pool, err error) {
 	configURL, err := url.Parse(config.URL)
 	if err != nil {
-		return nil, xerrors.Errorf("invalid redis URL: %s", err)
+		err = fmt.Errorf("invalid redis URL: %s", err)
+		return
 	}
 
 	switch configURL.Scheme {
 	case "redis":
-		return newInstancePool(config)
+		pool = newInstancePool(config)
 	case "redis+sentinel":
 		return newSentinelPool(configURL, config)
 	default:
-		return nil, xerrors.Errorf("invalid redis URL scheme: %s", configURL.Scheme)
+		err = fmt.Errorf("invalid redis URL scheme: %s", configURL.Scheme)
 	}
+	return
 }
 
 // redis://user:password@host:port/db-number
-func newInstancePool(config etc.RedisPool) (*redis.Client, error) {
-	// `idle_timeout_seconds` is used in Harbor for backward compatibility.
-	config.URL = strings.ReplaceAll(config.URL, "idle_timeout_seconds=", "idle_timeout=")
-
-	slog.Debug("Constructing connection pool for Redis", slog.String("url", config.URL))
-	options, err := redis.ParseURL(config.URL)
-	if err != nil {
-		return nil, xerrors.Errorf("invalid redis URL: %s", err)
+func newInstancePool(config etc.RedisPool) *redis.Pool {
+	return &redis.Pool{
+		Dial: func() (redis.Conn, error) {
+			log.WithField("url", config.URL).Trace("Connecting to Redis")
+			return redis.DialURL(config.URL)
+		},
+		MaxIdle:     config.MaxIdle,
+		MaxActive:   config.MaxActive,
+		IdleTimeout: config.IdleTimeout,
+		Wait:        true,
 	}
-
-	options.MaxIdleConns = config.MaxIdle
-	options.MaxActiveConns = config.MaxActive
-	options.ConnMaxIdleTime = config.IdleTimeout
-	options.OnConnect = func(ctx context.Context, cn *redis.Conn) error {
-		slog.Debug("Connecting to Redis", slog.String("connection", cn.String()))
-		return nil
-	}
-
-	return redis.NewClient(options), nil
 }
 
 // redis+sentinel://user:password@sentinel_host1:port1,sentinel_host2:port2/monitor-name/db-number
-func newSentinelPool(configURL *url.URL, config etc.RedisPool) (*redis.Client, error) {
-	slog.Debug("Constructing connection pool for Redis Sentinel")
+func newSentinelPool(configURL *url.URL, config etc.RedisPool) (pool *redis.Pool, err error) {
+	log.Trace("Constructing connection pool for Redis Sentinel")
 	sentinelURL, err := ParseSentinelURL(configURL)
 	if err != nil {
-		return nil, xerrors.Errorf("invalid redis sentinel URL: %s", err)
+		return
 	}
 
-	return redis.NewFailoverClient(&redis.FailoverOptions{
-		MasterName:    sentinelURL.MonitorName,
-		SentinelAddrs: sentinelURL.Addrs,
-		DB:            sentinelURL.Database,
-		Password:      sentinelURL.Password,
+	var commonOpts []redis.DialOption
+	if config.ConnectionTimeout > 0 {
+		commonOpts = append(commonOpts, redis.DialConnectTimeout(config.ConnectionTimeout))
+	}
+	if config.ReadTimeout > 0 {
+		commonOpts = append(commonOpts, redis.DialReadTimeout(config.ReadTimeout))
+	}
+	if config.WriteTimeout > 0 {
+		commonOpts = append(commonOpts, redis.DialWriteTimeout(config.WriteTimeout))
+	}
 
-		DialTimeout:  config.ConnectionTimeout,
-		ReadTimeout:  config.ReadTimeout,
-		WriteTimeout: config.WriteTimeout,
+	sentinelOpts := commonOpts
 
-		MaxIdleConns:    config.MaxIdle,
-		ConnMaxIdleTime: config.IdleTimeout,
+	sntnl := &sentinel.Sentinel{
+		Addrs:      sentinelURL.Addrs,
+		MasterName: sentinelURL.MonitorName,
+		Dial: func(addr string) (conn redis.Conn, err error) {
+			log.WithField("addr", addr).Trace("Connecting to Redis sentinel")
+			conn, err = redis.Dial("tcp", addr, sentinelOpts...)
+			if err != nil {
+				return
+			}
+			return
+		},
+	}
 
-		OnConnect: func(ctx context.Context, cn *redis.Conn) error {
-			slog.Debug("Connecting to Redis sentinel", slog.String("connection", cn.String()))
+	redisOpts := commonOpts
+
+	redisOpts = append(redisOpts, redis.DialDatabase(sentinelURL.Database))
+	redisOpts = append(redisOpts, redis.DialPassword(sentinelURL.Password))
+
+	pool = &redis.Pool{
+		Dial: func() (conn redis.Conn, err error) {
+			masterAddr, err := sntnl.MasterAddr()
+			if err != nil {
+				return
+			}
+			log.WithField("addr", masterAddr).Trace("Connecting to Redis master")
+			return redis.Dial("tcp", masterAddr, redisOpts...)
+		},
+		TestOnBorrow: func(c redis.Conn, t time.Time) error {
+			if time.Since(t) < time.Minute {
+				return nil
+			}
+			log.Trace("Testing connection to Redis master on borrow")
+			if !sentinel.TestRole(c, "master") {
+				return errors.New("role check failed")
+			}
 			return nil
 		},
-	}), nil
+		MaxIdle:     config.MaxIdle,
+		MaxActive:   config.MaxActive,
+		IdleTimeout: config.IdleTimeout,
+		Wait:        true,
+	}
+	return
 }
 
 type SentinelURL struct {

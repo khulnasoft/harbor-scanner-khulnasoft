@@ -5,12 +5,12 @@ metadata:
   labels:
 {{ include "harbor-scanner-khulnasoft.labels" . | indent 4 }}
 spec:
-  type: {{ .Values.service.type | default "ClusterIP" }}
+  type: {{ .Values.service.type }}
   selector:
     app.kubernetes.io/name: {{ include "harbor-scanner-khulnasoft.name" . }}
     app.kubernetes.io/instance: {{ .Release.Name }}
   ports:
     - name: api-server
       protocol: TCP
-      port: {{ .Values.service.port | default 8080 }}
-      targetPort: {{ .Values.service.port | default 8080 }}
+      port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.port }}

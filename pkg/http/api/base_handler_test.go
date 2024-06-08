@@ -1,57 +1,44 @@
 package api
 
 import (
+	"github.com/khulnasoft/harbor-scanner-khulnasoft/pkg/harbor"
+	"github.com/stretchr/testify/assert"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 )
 
 func TestMimeType_String(t *testing.T) {
 	testCases := []struct {
-		Name           string
-		MimeType       MIMEType
-		ExpectedString string
+		mimeType       MimeType
+		expectedString string
 	}{
 		{
-			Name: "A",
-			MimeType: MIMEType{
-				Type:    "application",
-				Subtype: "vnd.scanner.adapter.scan.request+json",
-			},
-			ExpectedString: "application/vnd.scanner.adapter.scan.request+json",
+			mimeType:       MimeType{Type: "application", Subtype: "vnd.scanner.adapter.scan.request+json"},
+			expectedString: "application/vnd.scanner.adapter.scan.request+json",
 		},
 		{
-			Name: "B",
-			MimeType: MIMEType{
-				Type:    "application",
-				Subtype: "vnd.scanner.adapter.scan.request+json",
-				Params:  map[string]string{"version": "1.0"},
-			},
-			ExpectedString: "application/vnd.scanner.adapter.scan.request+json; version=1.0",
+			mimeType:       MimeType{Type: "application", Subtype: "vnd.scanner.adapter.scan.request+json", Params: MimeTypeParams{"version": "1.0"}},
+			expectedString: "application/vnd.scanner.adapter.scan.request+json; version=1.0",
 		},
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.Name, func(t *testing.T) {
-			assert.Equal(t, tc.ExpectedString, tc.MimeType.String())
+		t.Run(tc.expectedString, func(t *testing.T) {
+			assert.Equal(t, tc.expectedString, tc.mimeType.String())
 		})
 	}
 }
 
 func TestBaseHandler_WriteJSONError(t *testing.T) {
-	// given
 	recorder := httptest.NewRecorder()
 	handler := &BaseHandler{}
 
-	// when
-	handler.WriteJSONError(recorder, Error{
+	handler.WriteJSONError(recorder, harbor.Error{
 		HTTPCode: http.StatusBadRequest,
 		Message:  "Invalid request",
 	})
 
-	// then
 	assert.Equal(t, http.StatusBadRequest, recorder.Code)
 	assert.JSONEq(t, `{"error":{"message":"Invalid request"}}`, recorder.Body.String())
 }

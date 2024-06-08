@@ -1,14 +1,14 @@
 package persistence
 
 import (
-	"context"
 	"github.com/khulnasoft/harbor-scanner-khulnasoft/pkg/harbor"
 	"github.com/khulnasoft/harbor-scanner-khulnasoft/pkg/job"
 )
 
+// Store defines methods for persisting ScanJobs and associated ScanReports.
 type Store interface {
-	Create(ctx context.Context, scanJob job.ScanJob) error
-	Get(ctx context.Context, scanJobKey job.ScanJobKey) (*job.ScanJob, error)
-	UpdateStatus(ctx context.Context, scanJobKey job.ScanJobKey, newStatus job.ScanJobStatus, error ...string) error
-	UpdateReport(ctx context.Context, scanJobKey job.ScanJobKey, report harbor.ScanReport) error
+	Create(scanJob job.ScanJob) error
+	Get(scanJobID string) (*job.ScanJob, error)
+	UpdateStatus(scanJobID string, newStatus job.Status, error ...string) error
+	UpdateReport(scanJobID string, reports harbor.ScanReport) error
 }

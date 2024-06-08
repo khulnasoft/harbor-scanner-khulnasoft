@@ -5,7 +5,6 @@ package redis
 import (
 	"context"
 	"fmt"
-	"github.com/khulnasoft/harbor-scanner-khulnasoft/pkg/http/api"
 	"testing"
 	"time"
 
@@ -42,74 +41,75 @@ func TestStore(t *testing.T) {
 
 	redisURL := getRedisURL(t, ctx, redisC)
 
-	config := etc.RedisStore{
-		Namespace:  "harbor.scanner.trivy:store",
-		ScanJobTTL: parseDuration(t, "10s"),
-	}
-
-	pool, err := redisx.NewClient(etc.RedisPool{
+	pool, err := redisx.NewPool(etc.RedisPool{
 		URL: redisURL,
 	})
 	require.NoError(t, err)
 
-	store := redis.NewStore(config, pool)
+	store := redis.NewStore(etc.RedisStore{
+		Namespace:  "harbor.scanner.khulnasoft:store",
+		ScanJobTTL: parseDuration(t, "10s"),
+	}, pool)
 
 	t.Run("CRUD", func(t *testing.T) {
-		scanJobKey := job.ScanJobKey{
-			ID:       "123",
-			MIMEType: api.MimeTypeSecurityVulnerabilityReport,
-		}
+		scanJobID := "123"
 
-		err := store.Create(ctx, job.ScanJob{
-			Key:    scanJobKey,
-			Status: job.Queued,
+		err := store.Create(job.ScanJob{
+			ID:     scanJobID,
+			Status: job.Pending,
 		})
 		require.NoError(t, err, "saving scan job should not fail")
 
-		j, err := store.Get(ctx, scanJobKey)
+		j, err := store.Get(scanJobID)
 		require.NoError(t, err, "getting scan job should not fail")
 		assert.Equal(t, &job.ScanJob{
-			Key:    scanJobKey,
-			Status: job.Queued,
+			ID:     scanJobID,
+			Status: job.Pending,
 		}, j)
 
-		err = store.UpdateStatus(ctx, scanJobKey, job.Pending)
+		err = store.UpdateStatus(scanJobID, job.Running)
 		require.NoError(t, err, "updating scan job status should not fail")
 
-		j, err = store.Get(ctx, scanJobKey)
+		j, err = store.Get(scanJobID)
 		require.NoError(t, err, "getting scan job should not fail")
 		assert.Equal(t, &job.ScanJob{
-			Key:    scanJobKey,
-			Status: job.Pending,
+			ID:     scanJobID,
+			Status: job.Running,
 		}, j)
 
 		scanReport := harbor.ScanReport{
 			Severity: harbor.SevHigh,
 			Vulnerabilities: []harbor.VulnerabilityItem{
 				{
-					ID: "CVE-2013-1400",
+					ID:         "CVE-2013-1400",
+					Pkg:        "openssl",
+					Version:    "2.4",
+					FixVersion: "2.4.2",
+					Severity:   harbor.SevHigh,
+					Links: []string{
+						"https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2013-1400",
+					},
 				},
 			},
 		}
 
-		err = store.UpdateReport(ctx, scanJobKey, scanReport)
+		err = store.UpdateReport(scanJobID, scanReport)
 		require.NoError(t, err, "updating scan job reports should not fail")
 
-		j, err = store.Get(ctx, scanJobKey)
+		j, err = store.Get(scanJobID)
 		require.NoError(t, err, "retrieving scan job should not fail")
 		require.NotNil(t, j, "retrieved scan job must not be nil")
 		assert.Equal(t, scanReport, j.Report)
 
-		err = store.UpdateStatus(ctx, scanJobKey, job.Finished)
+		err = store.UpdateStatus(scanJobID, job.Finished)
 		require.NoError(t, err)
 
 		time.Sleep(parseDuration(t, "12s"))
 
-		j, err = store.Get(ctx, scanJobKey)
+		j, err = store.Get(scanJobID)
 		require.NoError(t, err, "retrieve scan job should not fail")
 		require.Nil(t, j, "retrieved scan job should be nil, i.e. expired")
 	})
-
 }
 
 func getRedisURL(t *testing.T, ctx context.Context, redisC tc.Container) string {

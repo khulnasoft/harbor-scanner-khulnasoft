@@ -1,123 +1,54 @@
 package etc
 
 import (
-	"log/slog"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-type Envs map[string]string
-
-func TestGetLogLevel(t *testing.T) {
-	testCases := []struct {
-		Name             string
-		Envs             Envs
-		ExpectedLogLevel slog.Level
-	}{
-		{
-			Name:             "Should return default log level when env is not set",
-			ExpectedLogLevel: slog.LevelInfo,
-		},
-		{
-			Name: "Should return default log level when env has invalid value",
-			Envs: Envs{
-				"SCANNER_LOG_LEVEL": "unknown_level",
-			},
-			ExpectedLogLevel: slog.LevelInfo,
-		},
-		{
-			Name: "Should return log level set as env",
-			Envs: Envs{
-				"SCANNER_LOG_LEVEL": "debug",
-			},
-			ExpectedLogLevel: slog.LevelDebug,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.Name, func(t *testing.T) {
-			setEnvs(t, tc.Envs)
-			assert.Equal(t, tc.ExpectedLogLevel, LogLevel())
-		})
-	}
-}
+type envs map[string]string
 
 func TestGetConfig(t *testing.T) {
 	testCases := []struct {
 		name           string
-		envs           Envs
-		expectedError  error
+		envs           envs
+		expectedError  string
 		expectedConfig Config
 	}{
-		{
-			name: "Should enable Trivy debug mode when log level is set to debug",
-			envs: Envs{
-				"SCANNER_LOG_LEVEL": "debug",
-			},
-			expectedConfig: Config{
-				API: API{
-					Addr:           ":8080",
-					ReadTimeout:    parseDuration(t, "15s"),
-					WriteTimeout:   parseDuration(t, "15s"),
-					IdleTimeout:    parseDuration(t, "60s"),
-					MetricsEnabled: true,
-				},
-				Trivy: Trivy{
-					DebugMode:   true,
-					CacheDir:    "/home/scanner/.cache/trivy",
-					ReportsDir:  "/home/scanner/.cache/reports",
-					VulnType:    "os,library",
-					Scanners:    "vuln",
-					Severity:    "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL",
-					Insecure:    false,
-					GitHubToken: "",
-					Timeout:     parseDuration(t, "5m0s"),
-				},
-				RedisPool: RedisPool{
-					URL:               "redis://localhost:6379",
-					MaxActive:         5,
-					MaxIdle:           5,
-					IdleTimeout:       parseDuration(t, "5m"),
-					ConnectionTimeout: parseDuration(t, "1s"),
-					ReadTimeout:       parseDuration(t, "1s"),
-					WriteTimeout:      parseDuration(t, "1s"),
-				},
-				RedisStore: RedisStore{
-					Namespace:  "harbor.scanner.trivy:data-store",
-					ScanJobTTL: parseDuration(t, "1h"),
-				},
-				JobQueue: JobQueue{
-					Namespace:         "harbor.scanner.trivy:job-queue",
-					WorkerConcurrency: 1,
-				},
-			},
-		},
 		{
 			name: "Should return default config",
 			expectedConfig: Config{
 				API: API{
-					Addr:           ":8080",
-					ReadTimeout:    parseDuration(t, "15s"),
-					WriteTimeout:   parseDuration(t, "15s"),
-					IdleTimeout:    parseDuration(t, "60s"),
-					MetricsEnabled: true,
+					Addr:         ":8080",
+					ReadTimeout:  parseDuration(t, "15s"),
+					WriteTimeout: parseDuration(t, "15s"),
+					IdleTimeout:  parseDuration(t, "60s"),
 				},
-				Trivy: Trivy{
-					DebugMode:   false,
-					CacheDir:    "/home/scanner/.cache/trivy",
-					ReportsDir:  "/home/scanner/.cache/reports",
-					VulnType:    "os,library",
-					Scanners:    "vuln",
-					Severity:    "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL",
-					Insecure:    false,
-					GitHubToken: "",
-					Timeout:     parseDuration(t, "5m0s"),
+				KhulnasoftCSP: KhulnasoftCSP{
+					Username:    "",
+					Password:    "",
+					Host:        "http://csp-console-svc.khulnasoft:8080",
+					Registry:    "Harbor",
+					ReportsDir:  "/var/lib/scanner/reports",
+					UseImageTag: true,
+
+					ScannerCLINoVerify:                    false,
+					ScannerCLIShowNegligible:              true,
+					ScannerCLIOverrideRegistryCredentials: false,
+					ScannerCLIRegisterImages:              Never,
+
+					ReportDelete: true,
+				},
+				RedisStore: RedisStore{
+					Namespace:  "harbor.scanner.khulnasoft:store",
+					ScanJobTTL: parseDuration(t, "1h"),
 				},
 				RedisPool: RedisPool{
-					URL:               "redis://localhost:6379",
+					URL:               "redis://harbor-harbor-redis:6379",
 					MaxActive:         5,
 					MaxIdle:           5,
 					IdleTimeout:       parseDuration(t, "5m"),
@@ -125,99 +56,70 @@ func TestGetConfig(t *testing.T) {
 					ReadTimeout:       parseDuration(t, "1s"),
 					WriteTimeout:      parseDuration(t, "1s"),
 				},
-				RedisStore: RedisStore{
-					Namespace:  "harbor.scanner.trivy:data-store",
-					ScanJobTTL: parseDuration(t, "1h"),
-				},
-				JobQueue: JobQueue{
-					Namespace:         "harbor.scanner.trivy:job-queue",
-					WorkerConcurrency: 1,
-				},
 			},
 		},
 		{
+			name: "Should return error when ScannerCLIRegisterImages has invalid value",
+			envs: envs{
+				"SCANNER_CLI_REGISTER_IMAGES": "XXX",
+			},
+			expectedError: "env: parse error on field \"ScannerCLIRegisterImages\" of type \"etc.ImageRegistration\": expected values Never, Always or Compliant but got XXX",
+		},
+		{
 			name: "Should overwrite default config with environment variables",
-			envs: Envs{
-				"SCANNER_API_SERVER_ADDR":            ":4200",
-				"SCANNER_API_SERVER_TLS_CERTIFICATE": "/certs/tls.crt",
-				"SCANNER_API_SERVER_TLS_KEY":         "/certs/tls.key",
-				"SCANNER_API_SERVER_CLIENT_CAS":      "/certs/tls1.crt,/certs/tls2.crt",
-				"SCANNER_API_SERVER_TLS_MIN_VERSION": "1.0",
-				"SCANNER_API_SERVER_TLS_MAX_VERSION": "1.2",
-				"SCANNER_API_SERVER_READ_TIMEOUT":    "1h",
-				"SCANNER_API_SERVER_WRITE_TIMEOUT":   "2m",
-				"SCANNER_API_SERVER_IDLE_TIMEOUT":    "3m10s",
-
-				"SCANNER_KHULNASOFT_CACHE_DIR":       "/home/scanner/trivy-cache",
-				"SCANNER_KHULNASOFT_REPORTS_DIR":     "/home/scanner/trivy-reports",
-				"SCANNER_TRIVY_DEBUG_MODE":      "true",
-				"SCANNER_TRIVY_VULN_TYPE":       "os,library",
-				"SCANNER_TRIVY_SECURITY_CHECKS": "vuln",
-				"SCANNER_TRIVY_SEVERITY":        "CRITICAL",
-				"SCANNER_TRIVY_IGNORE_UNFIXED":  "true",
-				"SCANNER_TRIVY_INSECURE":        "true",
-				"SCANNER_TRIVY_SKIP_UPDATE":     "true",
-				"SCANNER_TRIVY_OFFLINE_SCAN":    "true",
-				"SCANNER_TRIVY_GITHUB_TOKEN":    "<GITHUB_TOKEN>",
-				"SCANNER_TRIVY_TIMEOUT":         "15m30s",
-
-				"SCANNER_STORE_REDIS_NAMESPACE":    "store.ns",
-				"SCANNER_STORE_REDIS_SCAN_JOB_TTL": "2h45m15s",
-
-				"SCANNER_JOB_QUEUE_REDIS_NAMESPACE":    "job-queue.ns",
-				"SCANNER_JOB_QUEUE_WORKER_CONCURRENCY": "3",
-
-				"SCANNER_REDIS_URL":                  "redis://harbor-harbor-redis:6379",
-				"SCANNER_REDIS_POOL_MAX_ACTIVE":      "3",
-				"SCANNER_REDIS_POOL_MAX_IDLE":        "7",
-				"SCANNER_REDIS_POOL_IDLE_TIMEOUT":    "3m",
-				"SCANNER_API_SERVER_METRICS_ENABLED": "false",
+			envs: envs{
+				"SCANNER_API_ADDR":                          ":4200",
+				"SCANNER_API_TLS_CERTIFICATE":               "/certs/tls.crt",
+				"SCANNER_API_TLS_KEY":                       "/certs/tls.key",
+				"SCANNER_API_READ_TIMEOUT":                  "1h",
+				"SCANNER_API_WRITE_TIMEOUT":                 "2m",
+				"SCANNER_API_IDLE_TIMEOUT":                  "1h2m3s",
+				"SCANNER_KHULNASOFT_REPORTS_DIR":                  "/somewhere/else",
+				"SCANNER_KHULNASOFT_USE_IMAGE_TAG":                "false",
+				"SCANNER_KHULNASOFT_HOST":                         "http://khulnasoft-web.khulnasoft-security:8080",
+				"SCANNER_KHULNASOFT_USERNAME":                     "scanner",
+				"SCANNER_KHULNASOFT_PASSWORD":                     "s3cret",
+				"SCANNER_CLI_NO_VERIFY":                     "true",
+				"SCANNER_CLI_SHOW_NEGLIGIBLE":               "false",
+				"SCANNER_CLI_REGISTER_IMAGES":               "Compliant",
+				"SCANNER_CLI_OVERRIDE_REGISTRY_CREDENTIALS": "true",
+				"SCANNER_REDIS_URL":                         "redis://localhost:6379",
+				"SCANNER_KHULNASOFT_REPORT_DELETE":                "false",
 			},
 			expectedConfig: Config{
 				API: API{
 					Addr:           ":4200",
 					TLSCertificate: "/certs/tls.crt",
 					TLSKey:         "/certs/tls.key",
-					ClientCAs: []string{
-						"/certs/tls1.crt",
-						"/certs/tls2.crt",
-					},
 					ReadTimeout:    parseDuration(t, "1h"),
 					WriteTimeout:   parseDuration(t, "2m"),
-					IdleTimeout:    parseDuration(t, "3m10s"),
-					MetricsEnabled: false,
+					IdleTimeout:    parseDuration(t, "1h2m3s"),
 				},
-				Trivy: Trivy{
-					CacheDir:         "/home/scanner/trivy-cache",
-					ReportsDir:       "/home/scanner/trivy-reports",
-					DebugMode:        true,
-					VulnType:         "os,library",
-					Scanners:         "vuln",
-					Severity:         "CRITICAL",
-					IgnoreUnfixed:    true,
-					SkipDBUpdate:     true,
-					SkipJavaDBUpdate: false,
-					OfflineScan:      true,
-					Insecure:         true,
-					GitHubToken:      "<GITHUB_TOKEN>",
-					Timeout:          parseDuration(t, "15m30s"),
+				KhulnasoftCSP: KhulnasoftCSP{
+					Username:                              "scanner",
+					Password:                              "s3cret",
+					Host:                                  "http://khulnasoft-web.khulnasoft-security:8080",
+					Registry:                              "Harbor",
+					ReportsDir:                            "/somewhere/else",
+					UseImageTag:                           false,
+					ScannerCLINoVerify:                    true,
+					ScannerCLIShowNegligible:              false,
+					ScannerCLIRegisterImages:              Compliant,
+					ScannerCLIOverrideRegistryCredentials: true,
+					ReportDelete:                          false,
+				},
+				RedisStore: RedisStore{
+					Namespace:  "harbor.scanner.khulnasoft:store",
+					ScanJobTTL: parseDuration(t, "1h"),
 				},
 				RedisPool: RedisPool{
-					URL:               "redis://harbor-harbor-redis:6379",
-					MaxActive:         3,
-					MaxIdle:           7,
-					IdleTimeout:       parseDuration(t, "3m"),
+					URL:               "redis://localhost:6379",
+					MaxActive:         5,
+					MaxIdle:           5,
+					IdleTimeout:       parseDuration(t, "5m"),
 					ConnectionTimeout: parseDuration(t, "1s"),
 					ReadTimeout:       parseDuration(t, "1s"),
 					WriteTimeout:      parseDuration(t, "1s"),
-				},
-				RedisStore: RedisStore{
-					Namespace:  "store.ns",
-					ScanJobTTL: parseDuration(t, "2h45m15s"),
-				},
-				JobQueue: JobQueue{
-					Namespace:         "job-queue.ns",
-					WorkerConcurrency: 3,
 				},
 			},
 		},
@@ -225,17 +127,54 @@ func TestGetConfig(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			setEnvs(t, tc.envs)
+			setenvs(t, tc.envs)
 			config, err := GetConfig()
-			assert.Equal(t, tc.expectedError, err)
-			assert.Equal(t, tc.expectedConfig, config)
+			if tc.expectedError == "" {
+				require.NoError(t, err)
+				assert.Equal(t, tc.expectedConfig, config)
+			} else {
+				assert.EqualError(t, err, tc.expectedError)
+			}
 		})
 	}
 }
 
-func setEnvs(t *testing.T, envs Envs) {
+func TestGetLogLevel(t *testing.T) {
+	testCases := []struct {
+		name             string
+		envs             envs
+		expectedLogLevel logrus.Level
+	}{
+		{
+			name:             "Should return default log level when env is not set",
+			expectedLogLevel: logrus.InfoLevel,
+		},
+		{
+			name:             "Should return default log level when env has invalid value",
+			envs:             envs{"SCANNER_LOG_LEVEL": "unknown_level"},
+			expectedLogLevel: logrus.InfoLevel,
+		},
+		{
+			name:             "Should return log level set as env",
+			envs:             envs{"SCANNER_LOG_LEVEL": "trace"},
+			expectedLogLevel: logrus.TraceLevel,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			setenvs(t, tc.envs)
+			assert.Equal(t, tc.expectedLogLevel, GetLogLevel())
+		})
+	}
+}
+
+func setenvs(t *testing.T, envs envs) {
+	t.Helper()
+	os.Clearenv()
 	for k, v := range envs {
-		t.Setenv(k, v)
+		err := os.Setenv(k, v)
+		require.NoError(t, err)
 	}
 }
 

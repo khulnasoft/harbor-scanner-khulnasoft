@@ -1,161 +1,97 @@
 nameOverride: ""
 fullnameOverride: ""
 
-image:
-  registry: docker.io
-  repository: aquasec/harbor-scanner-khulnasoft
-  tag: 0.31.2
-  pullPolicy: IfNotPresent
+service:
+  ## type Kubernetes service type
+  type: "ClusterIP"
+  ## port Kubernetes service port
+  port: 8080
 
+## replicaCount the number of scanner adapter Pods to run
 replicaCount: 1
 
-persistence:
-  enabled: true
-  storageClass: ""
-  accessMode: ReadWriteOnce
-  size: 5Gi
+initResources:
+  requests:
+    cpu: 200m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
 
-resources: {}
-  # We usually recommend not to specify default resources and to leave this as a conscious
-  # choice for the user. This also increases chances charts run on environments with little
-  # resources, such as Minikube. If you do want to specify resources, uncomment the following
-  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
-  # requests:
-  #   cpu: 200m
-  #   memory: 512Mi
-  # limits:
-  #   cpu: 1
-  #   memory: 1Gi
+mainResources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 1
+    memory: 512Mi
 
-podSecurityContext:
-  runAsUser: 10000
-  runAsNonRoot: true
-  fsGroup: 10000
-
-securityContext:
-  privileged: false
-  readOnlyRootFilesystem: true
+khulnasoft:
+  ## version the version of Khulnasoft Enterprise that the adapter operates against
+  version: 5.0
+  registry:
+    ## server the Khulnasoft Docker registry server
+    server: "registry.khulnasoft.com"
+    ## username the Khulnasoft Docker registry username
+    username: ""
+    ## password the Khulnasoft Docker registry password
+    password: ""
+  image:
+    pullPolicy: "IfNotPresent"
 
 scanner:
-  ## logLevel the log level of `trace`, `debug`, `info`, `warn`, `warning`, `error`, `fatal` or `panic`.
-  ## The standard logger logs entries with that level or anything above it.
+  image:
+    registry: "docker.io"
+    repository: "khulnasoft/harbor-scanner-khulnasoft"
+    tag: "0.14.0"
+    pullPolicy: "IfNotPresent"
   logLevel: info
+  tmpdir: ""
   api:
-    ## tlsEnabled the flag to enable or disable TLS for HTTP
+    ## tlsEnabled the flag to enable TLS for HTTP
     tlsEnabled: false
     ## tlsCertificate the absolute path to the x509 certificate file
     tlsCertificate: ""
     ## tlsKey the absolute path to the x509 private key file
     tlsKey: ""
     ## readTimeout the maximum duration for reading the entire request, including the body
-    readTimeout: "15s"
+    readTimeout: 15s
     ## writeTimeout the maximum duration before timing out writes of the response
-    writeTimeout: "15s"
+    writeTimeout: 15s
     ## idleTimeout the maximum amount of time to wait for the next request when keep-alives are enabled
-    idleTimeout: "60s"
-  trivy:
-    ## cacheDir Trivy cache directory
-    cacheDir: "/home/scanner/.cache/trivy"
-    ## reportsDir Trivy reports directory
-    reportsDir: "/home/scanner/.cache/reports"
-    ## debugMode the flag to enable Trivy debug mode
-    debugMode: false
-    ## vulnType a comma-separated list of vulnerability types. Possible values are `os` and `library`.
-    vulnType: "os,library"
-    ## severity a comma-separated list of vulnerabilities severities to be displayed
-    severity: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
-    ## ignoreUnfixed the flag to display only fixed vulnerabilities
-    ignoreUnfixed: false
-    ## timeout the duration to wait for scan completion
-    timeout: 5m0s
-    ## skipUpdate the flag to enable or disable Trivy DB downloads from GitHub
-    ##
-    ## You might want to enable this flag in test or CI/CD environments to avoid GitHub rate limiting issues.
-    ## If the flag is enabled you have to manually download the `trivy.db` file and mount it in the
-    ## `/home/scanner/.cache/trivy/db/trivy.db` path (see `cacheDir`).
-    skipUpdate: false
-       
-    ## If the flag is enabled you have to manually download the `trivy-java.db` file and mount it in the
-    ## `/home/scanner/.cache/trivy/java-db/trivy-java.db` path (see `cacheDir`).
-    skipJavaDBUpdate: false
-    # offlineScan the flag to disable external API requests to identify dependencies.
-    offlineScan: false
-    ## gitHubToken the GitHub access token to download Trivy DB
-    ##
-    ## Trivy DB contains vulnerability information from NVD, Red Hat, and many other upstream vulnerability databases.
-    ## It is downloaded by Trivy from the GitHub release page https://github.com/aquasecurity/trivy-db/releases and cached
-    ## in the local file system (`/home/scanner/.cache/trivy/db/trivy.db`). In addition, the database contains the update
-    ## timestamp so Trivy can detect whether it should download a newer version from the Internet or use the cached one.
-    ## Currently, the database is updated every 12 hours and published as a new release to GitHub.
-    ##
-    ## Anonymous downloads from GitHub are subject to the limit of 60 requests per hour. Normally such rate limit is enough
-    ## for production operations. If, for any reason, it's not enough, you could increase the rate limit to 5000
-    ## requests per hour by specifying the GitHub access token. For more details on GitHub rate limiting please consult
-    ## https://developer.github.com/v3/#rate-limiting
-    ##
-    ## You can create a GitHub token by following the instructions in
-    ## https://help.github.com/en/github/authenticating-to-github/creating-a-personal-access-token-for-the-command-line
-    gitHubToken: ""
-    ## insecure the flag to skip verifying registry certificate
-    insecure: false
-    # See https://github.com/aquasecurity/trivy#filter-the-vulnerabilities-by-open-policy-agent-policy for details
-    ignorePolicy: ""
-    # ignorePolicy:  |
-    #  package trivy
-    #
-    #  import data.lib.trivy
-    #
-    #  default ignore = false
-    #
-    #  ignore_pkgs := {"bash", "bind-license", "rpm", "vim", "vim-minimal"}
-    #
-    #  ignore_severities := {"LOW", "MEDIUM"}
-    #
-    #  nvd_v3_vector = v {
-    #    v := input.CVSS.nvd.v3
-    #  }
-    #
-    #  ignore {
-    #   input.PkgName == ignore_pkgs[_]
-    #  }
-    #
-    #  ignore {
-    #   input.Severity == ignore_severities[_]
-    #  }
-    #
-    #  # Ignore a vulnerability which is not remotely exploitable
-    #  ignore {
-    #   cvss_vector := trivy.parse_cvss_vector_v3(nvd_v3_vector)
-    #   cvss_vector.AttackVector != "Network"
-    #  }
-    #
-    #  # Ignore a vulnerability which requires high privilege
-    #  ignore {
-    #    cvss_vector := trivy.parse_cvss_vector_v3(nvd_v3_vector)
-    #    cvss_vector.PrivilegesRequired == "High"
-    #  }
-    #
-    #  # Ignore a vulnerability which requires user interaction
-    #  ignore {
-    #    cvss_vector := trivy.parse_cvss_vector_v3(nvd_v3_vector)
-    #    cvss_vector.UserInteraction == "Required"
-    #  }
-    #
-    #  # Ignore CSRF
-    #  ignore {
-    #    # https://cwe.mitre.org/data/definitions/352.html
-    #    input.CweIDs[_] == "CWE-352"
-    #  }
+    idleTimeout: 60s
+  khulnasoft:
+    ## username Khulnasoft management console username
+    username: ""
+    ## password Khulnasoft management console password
+    password: ""
+    ## host Khulnasoft management console address
+    host: "http://csp-console-svc.khulnasoft:8080"
+    ## registry the name of the Harbor registry configured in Khulnasoft management console
+    registry: "Harbor"
+    ## reportsDir directory to save temporary scan reports
+    reportsDir: "/var/lib/scanner/reports"
+    ## useImageTag the flag to determine whether the image tag or digest is used in the image reference passed to `scannercli`
+    useImageTag: false
+    ## scannerCLINoVerify the flag passed to `scannercli` to skip verifying TLS certificates
+    scannerCLINoVerify: false
+    ## scannerCLIShowNegligible the flag passed to `scannercli` to show negligible/unknown severity vulnerabilities
+    scannerCLIShowNegligible: true
+    ## scannerCLIOverrideRegistryCredentials the flag to enable passing `--robot-username` and `--robot-password`
+    ## flags to the `scannercli` executable binary
+    scannerCLIOverrideRegistryCredentials: false
+    ## scannerCLIDirectCC the flag passed to `scannercli` to contact CyberCenter directly (rather than through the Khulnasoft server)
+    scannerCLIDirectCC: false
+    ## scannerCLIRegisterImages the flag to determine whether images are registered in Khulnasoft management console:
+    ## `Never` - skips registration
+    ## `Compliant` - registers only compliant images
+    ## `Always` - registers compliant and non-compliant images
+    scannerCLIRegisterImages: Never
   store:
     ## redisNamespace the namespace for keys in the Redis store
-    redisNamespace: "harbor.scanner.trivy:store"
+    redisNamespace: "harbor.scanner.khulnasoft:store"
     ## redisScanJobTTL the time to live for persisting scan jobs and associated scan reports
     redisScanJobTTL: "1h"
-  jobQueue:
-    ## redisNamespace the namespace for keys in the scan jobs queue backed by Redis
-    redisNamespace: "harbor.scanner.trivy:job-queue"
-    ## workerConcurrency The number of workers to spin-up for the scan jobs queue
-    workerConcurrency: 1
   redis:
     ## poolURL the Redis server URI. The URI supports schemas to connect to a standalone Redis server,
     ## i.e. `redis://:password@standalone_host:port/db-number` and Redis Sentinel deployment,
@@ -174,15 +110,3 @@ scanner:
     poolReadTimeout: 1s
     ## poolWriteTimeout The timeout for writing a single Redis command
     poolWriteTimeout: 1s
-service:
-  ## type Kubernetes service type
-  type: ClusterIP
-  ## port Kubernetes service port
-  port: 8080
-
-# httpProxy the URL of the HTTP proxy server
-httpProxy:
-# httpsProxy the URL of the HTTPS proxy server
-httpsProxy:
-# noProxy the URLs that the proxy settings do not apply to
-noProxy:

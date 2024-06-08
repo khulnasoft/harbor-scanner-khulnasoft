@@ -1,13 +1,31 @@
 package ext
 
 import (
-	"github.com/google/go-containerregistry/pkg/name"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/stretchr/testify/mock"
-	"os"
+	"io"
 	"os/exec"
 )
+
+type FakeFile struct {
+	name   string
+	reader io.Reader
+}
+
+// NewFakeFile constructs a new FakeFile with the given name and content.
+func NewFakeFile(name string, content io.Reader) *FakeFile {
+	return &FakeFile{
+		name:   name,
+		reader: content,
+	}
+}
+
+func (ff *FakeFile) Name() string {
+	return ff.name
+}
+
+func (ff *FakeFile) Read(p []byte) (int, error) {
+	return ff.reader.Read(p)
+}
 
 type MockAmbassador struct {
 	mock.Mock
@@ -27,17 +45,21 @@ func (m *MockAmbassador) LookPath(file string) (string, error) {
 	return args.String(0), args.Error(1)
 }
 
-func (m *MockAmbassador) TempFile(dir, pattern string) (*os.File, error) {
-	args := m.Called(dir, pattern)
-	return args.Get(0).(*os.File), args.Error(1)
-}
-
-func (m *MockAmbassador) RunCmd(cmd *exec.Cmd) ([]byte, error) {
+func (m *MockAmbassador) RunCmd(cmd *exec.Cmd) ([]byte, int, error) {
 	args := m.Called(cmd)
-	return args.Get(0).([]byte), args.Error(1)
+	return args.Get(0).([]byte), args.Int(1), args.Error(2)
 }
 
-func (m *MockAmbassador) RemoteImage(ref name.Reference, options ...remote.Option) (v1.Image, error) {
-	args := m.Called(ref, options)
-	return args.Get(0).(v1.Image), args.Error(1)
+func (m *MockAmbassador) TempFile(dir, pattern string) (file File, err error) {
+	args := m.Called(dir, pattern)
+	if arg := args.Get(0); arg != nil {
+		file = arg.(File)
+	}
+	err = args.Error(1)
+	return
+}
+
+func (m *MockAmbassador) Remove(name string) error {
+	args := m.Called(name)
+	return args.Error(0)
 }

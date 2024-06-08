@@ -1,19 +1,15 @@
-# That's the only place where you're supposed to specify version of Trivy.
-ARG TRIVY_VERSION=0.51.2
+FROM alpine:3.14
 
-FROM aquasec/trivy:${TRIVY_VERSION}
+RUN echo "@edge http://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories
 
-# An ARG declared before a FROM is outside of a build stage, so it can't be used in any
-# instruction after a FROM. To use the default value of an ARG declared before the first
-# FROM use an ARG instruction without a value inside of a build stage.
-ARG TRIVY_VERSION
+RUN apk update \
+    && apk upgrade musl \
+    && apk add ca-certificates dpkg@edge rpm@edge expat@edge libbz2@edge libarchive@edge db@edge
 
-RUN adduser -u 10000 -D -g '' scanner scanner
+RUN adduser -u 1000 -D -g '' scanner scanner
 
-COPY scanner-khulnasoft /home/scanner/bin/scanner-khulnasoft
-
-ENV TRIVY_VERSION=${TRIVY_VERSION}
+COPY scanner-adapter /usr/local/bin/scanner-adapter
 
 USER scanner
 
-ENTRYPOINT ["/home/scanner/bin/scanner-khulnasoft"]
+ENTRYPOINT ["scanner-adapter"]

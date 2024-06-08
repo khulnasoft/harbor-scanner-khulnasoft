@@ -1,9 +1,7 @@
 package ext
 
 import (
-	"github.com/google/go-containerregistry/pkg/name"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"io/ioutil"
 	"os"
 	"os/exec"
 )
@@ -12,14 +10,20 @@ var (
 	DefaultAmbassador = &ambassador{}
 )
 
+// File abstracts the few methods we need, so we can test without real files.
+type File interface {
+	Name() string
+	Read([]byte) (int, error)
+}
+
 // Ambassador the ambassador to the outside "world". Wraps methods that modify global state and hence make the code that
 // use them very hard to test.
 type Ambassador interface {
 	Environ() []string
 	LookPath(string) (string, error)
-	TempFile(string, string) (*os.File, error)
-	RunCmd(cmd *exec.Cmd) ([]byte, error)
-	RemoteImage(name.Reference, ...remote.Option) (v1.Image, error)
+	RunCmd(cmd *exec.Cmd) ([]byte, int, error)
+	TempFile(dir, pattern string) (File, error)
+	Remove(name string) error
 }
 
 type ambassador struct {
@@ -29,18 +33,20 @@ func (a *ambassador) Environ() []string {
 	return os.Environ()
 }
 
-func (a *ambassador) RunCmd(cmd *exec.Cmd) ([]byte, error) {
-	return cmd.CombinedOutput()
+func (a *ambassador) RunCmd(cmd *exec.Cmd) (output []byte, code int, err error) {
+	output, err = cmd.CombinedOutput()
+	code = cmd.ProcessState.ExitCode()
+	return
 }
 
-func (a *ambassador) TempFile(dir, pattern string) (*os.File, error) {
-	return os.CreateTemp(dir, pattern)
+func (a *ambassador) TempFile(dir, pattern string) (File, error) {
+	return ioutil.TempFile(dir, pattern)
+}
+
+func (a *ambassador) Remove(name string) error {
+	return os.Remove(name)
 }
 
 func (a *ambassador) LookPath(file string) (string, error) {
 	return exec.LookPath(file)
-}
-
-func (a *ambassador) RemoteImage(ref name.Reference, options ...remote.Option) (v1.Image, error) {
-	return remote.Image(ref, options...)
 }

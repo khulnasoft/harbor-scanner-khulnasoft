@@ -1,17 +1,12 @@
 package api
 
 import (
+	"context"
 	"crypto/tls"
-	"crypto/x509"
-	"errors"
-	"fmt"
-	"log/slog"
 	"net/http"
-	"os"
-	"strings"
 
 	"github.com/khulnasoft/harbor-scanner-khulnasoft/pkg/etc"
-	"golang.org/x/net/context"
+	log "github.com/sirupsen/logrus"
 )
 
 type Server struct {
@@ -19,7 +14,7 @@ type Server struct {
 	server *http.Server
 }
 
-func NewServer(config etc.API, handler http.Handler) (server *Server, err error) {
+func NewServer(config etc.API, handler http.Handler) (server *Server) {
 	server = &Server{
 		config: config,
 		server: &http.Server{
@@ -30,10 +25,10 @@ func NewServer(config etc.API, handler http.Handler) (server *Server, err error)
 			IdleTimeout:  config.IdleTimeout,
 		},
 	}
-
 	if config.IsTLSEnabled() {
 		server.server.TLSConfig = &tls.Config{
-			MinVersion: tls.VersionTLS12,
+			MinVersion:               tls.VersionTLS12,
+			PreferServerCipherSuites: true,
 			// The API server prefers elliptic curves which have assembly implementations
 			// to ensure performance under heavy loads.
 			CurvePreferences: []tls.CurveID{
@@ -51,55 +46,36 @@ func NewServer(config etc.API, handler http.Handler) (server *Server, err error)
 				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
 			},
 		}
-
-		if len(config.ClientCAs) > 0 {
-			certPool := x509.NewCertPool()
-
-			for _, clientCAPath := range config.ClientCAs {
-				clientCA, err := os.ReadFile(clientCAPath)
-				if err != nil {
-					return nil, fmt.Errorf("cound not read file %s: %w", clientCAPath, err)
-				}
-
-				certPool.AppendCertsFromPEM(clientCA)
-			}
-
-			server.server.TLSConfig.ClientCAs = certPool
-			server.server.TLSConfig.ClientAuth = tls.RequireAndVerifyClientCert
-		}
 	}
-
 	return
 }
 
 func (s *Server) ListenAndServe() {
 	go func() {
-		if err := s.listenAndServe(); errors.Is(err, http.ErrServerClosed) {
-			slog.Error("Error", slog.String("err", err.Error()))
-			os.Exit(1)
+		if err := s.listenAndServe(); err != http.ErrServerClosed {
+			log.Fatalf("Error: %v", err)
 		}
-		slog.Debug("API server stopped listening for incoming connections")
+		log.Trace("API server stopped listening for incoming connections")
 	}()
 }
 
 func (s *Server) listenAndServe() error {
 	if s.config.IsTLSEnabled() {
-		slog.Debug("Starting API server with TLS",
-			slog.String("certificate", s.config.TLSCertificate),
-			slog.String("key", s.config.TLSKey),
-			slog.String("clientCAs", strings.Join(s.config.ClientCAs, ", ")),
-			slog.String("addr", s.config.Addr),
-		)
+		log.WithFields(log.Fields{
+			"certificate": s.config.TLSCertificate,
+			"key":         s.config.TLSKey,
+			"addr":        s.config.Addr,
+		}).Debug("Starting API server with TLS")
 		return s.server.ListenAndServeTLS(s.config.TLSCertificate, s.config.TLSKey)
 	}
-	slog.Warn("Starting API server without TLS", slog.String("addr", s.config.Addr))
+	log.WithField("addr", s.config.Addr).Warn("Starting API server without TLS")
 	return s.server.ListenAndServe()
 }
 
 func (s *Server) Shutdown() {
-	slog.Debug("API server shutdown started")
+	log.Trace("API server shutdown started")
 	if err := s.server.Shutdown(context.Background()); err != nil {
-		slog.Error("Error while shutting down API server", slog.String("err", err.Error()))
+		log.WithError(err).Error("Error while shutting down API server")
 	}
-	slog.Debug("API server shutdown completed")
+	log.Trace("API server shutdown completed")
 }

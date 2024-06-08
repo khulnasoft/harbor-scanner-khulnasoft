@@ -1,4 +1,3 @@
-{{/* vim: set filetype=mustache: */}}
 {{/*
 Expand the name of the chart.
 */}}
@@ -45,11 +44,36 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 
 {{/*
+Return the proper imageRef as used by the init conainer template spec.
+*/}}
+{{- define "harbor-scanner-khulnasoft.scannerImageRef" -}}
+{{- $registryName := .Values.khulnasoft.registry.server -}}
+{{- $repositoryName := "scanner" -}}
+{{- $tag := .Values.khulnasoft.version | toString -}}
+{{- printf "%s/%s:%s" $registryName $repositoryName $tag -}}
+{{- end -}}
+
+{{/*
 Return the proper imageRef as used by the container template spec.
 */}}
-{{- define "harbor-scanner-khulnasoft.imageRef" -}}
-{{- $registryName := .Values.image.registry -}}
-{{- $repositoryName := .Values.image.repository -}}
-{{- $tag := .Values.image.tag | toString -}}
+{{- define "harbor-scanner-khulnasoft.adapterImageRef" -}}
+{{- $registryName := .Values.scanner.image.registry -}}
+{{- $repositoryName := .Values.scanner.image.repository -}}
+{{- $tag := .Values.scanner.image.tag | toString -}}
 {{- printf "%s/%s:%s" $registryName $repositoryName $tag -}}
+{{- end -}}
+
+{{- define "imagePullSecret" -}}
+{{- printf "{\"auths\": {\"%s\": {\"auth\": \"%s\"}}}" .Values.khulnasoft.registry.server (printf "%s:%s" .Values.khulnasoft.registry.username .Values.khulnasoft.registry.password | b64enc) | b64enc }}
+{{- end }}
+
+{{/*
+Return the proper scheme for liveness and readiness probe spec.
+*/}}
+{{- define "probeScheme" -}}
+{{- if .Values.scanner.api.tlsEnabled -}}
+HTTPS
+{{- else -}}
+HTTP
+{{- end -}}
 {{- end -}}
