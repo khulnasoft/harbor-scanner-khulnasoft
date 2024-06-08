@@ -30,7 +30,7 @@ changelog:
 dockers:
   - image_templates:
       - "docker.io/khulnasoft/harbor-scanner-khulnasoft:{{ .Version }}"
-      - "public.ecr.aws/khulnasoft/harbor-scanner-khulnasoft:{{ .Version }}"
+      - "ghcr.io/khulnasoft/harbor-scanner-khulnasoft:{{ .Version }}"
     ids:
       - scanner-adapter
     build_flag_templates:
