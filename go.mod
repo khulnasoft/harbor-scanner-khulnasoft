@@ -6,7 +6,7 @@ require (
 	github.com/FZambia/sentinel v1.1.1
 	github.com/caarlos0/env/v6 v6.8.0
 	github.com/gomodule/redigo v1.9.2
-	github.com/google/uuid v1.3.0
+	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.0
 	github.com/prometheus/client_golang v1.11.0
 	github.com/sirupsen/logrus v1.8.1
