@@ -1,0 +1,44 @@
+---
+env:
+  - GO111MODULE=on
+before:
+  hooks:
+    - go mod tidy
+builds:
+  - id: scanner-khulnasoft
+    main: ./cmd/scanner-khulnasoft/main.go
+    binary: scanner-khulnasoft
+    env:
+      - CGO_ENABLED=0
+archives:
+  - replacements:
+      darwin: Darwin
+      linux: Linux
+      386: i386
+      amd64: x86_64
+checksum:
+  name_template: 'checksums.txt'
+snapshot:
+  name_template: "{{ .FullCommit }}"
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs'
+      - '^test'
+      - '^release'
+dockers:
+  - image_templates:
+      - "docker.io/aquasec/harbor-scanner-khulnasoft:{{ .Version }}"
+      - "public.ecr.aws/khulnasoft/harbor-scanner-khulnasoft:{{ .Version }}"
+    ids:
+      - scanner-khulnasoft
+    build_flag_templates:
+      - "--label=org.label-schema.schema-version=1.0"
+      - "--label=org.label-schema.name={{ .ProjectName }}"
+      - "--label=org.label-schema.description=Harbor scanner adapter for Trivy"
+      - "--label=org.label-schema.vendor=Aqua Security"
+      - "--label=org.label-schema.version={{ .Version }}"
+      - "--label=org.label-schema.build-date={{ .Date }}"
+      - "--label=org.label-schema.vcs=https://github.com/khulnasoft/harbor-scanner-khulnasoft"
+      - "--label=org.label-schema.vcs-ref={{ .FullCommit }}"
