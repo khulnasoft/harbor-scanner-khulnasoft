@@ -10,7 +10,7 @@ require (
 	github.com/gorilla/mux v1.8.0
 	github.com/prometheus/client_golang v1.11.0
 	github.com/sirupsen/logrus v1.8.1
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.9.0
 	github.com/testcontainers/testcontainers-go v0.13.0
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
 )
@@ -46,7 +46,7 @@ require (
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.26.0 // indirect
 	github.com/prometheus/procfs v0.6.0 // indirect
-	github.com/stretchr/objx v0.5.0 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	go.opencensus.io v0.22.3 // indirect
 	golang.org/x/net v0.0.0-20211108170745-6635138e15ea // indirect
 	golang.org/x/sys v0.0.0-20211124211545-fe61309f8881 // indirect
